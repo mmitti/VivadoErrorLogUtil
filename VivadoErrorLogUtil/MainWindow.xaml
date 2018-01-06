@@ -1,0 +1,39 @@
+﻿<Window x:Class="VivadoErrorLogUtil.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:VivadoErrorLogUtil"
+        mc:Ignorable="d"
+        Title="VivadoErrorLogUtil" Height="350" Width="525">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="auto"></RowDefinition>
+            <RowDefinition Height="auto"></RowDefinition>
+            <RowDefinition Height="*"></RowDefinition>
+            <RowDefinition Height="50"></RowDefinition>
+        </Grid.RowDefinitions>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="auto"></ColumnDefinition>
+                <ColumnDefinition Width="auto"></ColumnDefinition>
+                <ColumnDefinition Width="*"></ColumnDefinition>
+                <ColumnDefinition Width="auto"></ColumnDefinition>
+            </Grid.ColumnDefinitions>
+            <Label Grid.Column="0">ProjectPath:</Label>
+            <Label Grid.Column="1" x:Name="ProjectPath" HorizontalAlignment="Left">Not Found</Label>
+            <Button Grid.Column="3" Click="Button_Click">FIND</Button>
+        </Grid>
+        <Border Grid.Row="1" BorderBrush="#FF004488" BorderThickness="0,1,0,2">
+            <TextBlock x:Name="FileName"  HorizontalAlignment="Center" FontSize="20">No Error Log</TextBlock>
+        </Border>
+        <ScrollViewer Grid.Row="2" x:Name="MainLogScroll" HorizontalScrollBarVisibility="Visible">
+            <TextBlock x:Name="MainLog"></TextBlock>
+        </ScrollViewer>
+        <Border Grid.Row="3" BorderBrush="#FF004488" BorderThickness="0,4,0,0">
+            <ScrollViewer x:Name="SystemLogScroll">
+                <TextBlock x:Name="SystemLog" TextWrapping="Wrap"></TextBlock>
+            </ScrollViewer>
+        </Border>
+    </Grid>
+</Window>
