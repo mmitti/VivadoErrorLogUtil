@@ -43,6 +43,26 @@ namespace VivadoErrorLogUtil
             });
         }
 
+        class FileOpenCommand : ICommand
+        {
+            public event EventHandler CanExecuteChanged;
+
+            public bool CanExecute(object parameter)
+            {
+                return true;
+            }
+
+            public void Execute(object parameter)
+            {
+                var proc = new System.Diagnostics.Process();
+
+                var path_patch = Regex.Match(parameter as String, @"([a-z]\:(/.*)+.*)\:(\d+)");
+                proc.StartInfo.FileName = path_patch.Groups[1].Value;
+                proc.StartInfo.UseShellExecute = true;
+                proc.Start();
+            }
+        }
+
         private async void MainLoop()
         {
             while (true)
@@ -137,23 +157,53 @@ namespace VivadoErrorLogUtil
                     }
 
                     MainLog.Inlines.Clear();
-                    foreach(var l in logs)
+
+                    void write_message(String text, Brush color)
                     {
-                        if (l.Contains("ERROR"))
+                        if (color == Brushes.Black)
                         {
-                            MainLog.Inlines.Add(new Run(l) { Foreground = Brushes.Red });
-                        }else if (l.Contains("WARNING"))
-                        {
-                            MainLog.Inlines.Add(new Run(l) { Foreground = Brushes.Orange });
+                            MainLog.Inlines.Add(new Run(text));
                         }
                         else
                         {
-                            MainLog.Inlines.Add(new Run(l));
+
+                            MainLog.Inlines.Add(new Run(text) { Foreground = color });
+                        }
+                    }
+
+                    foreach(var l in logs)
+                    {
+                        var color = Brushes.Black;
+                        if (l.Contains("ERROR"))
+                        {
+                            color = Brushes.Red;
+                        }
+                        else if (l.Contains("WARNING"))
+                        {
+                            color = Brushes.Orange;
+                        }
+
+                        var path_patch = Regex.Match(l, @"(.*)([a-z]\:(/.*)+.*\:\d+)(.*)");
+                        if (path_patch.Success && path_patch.Groups.Count >= 3)
+                        {
+                            write_message(path_patch.Groups[1].Value, color);
+                            MainLog.Inlines.Add(new Hyperlink(new Run(path_patch.Groups[2].Value))
+                            {
+                                CommandParameter = path_patch.Groups[2].Value,
+                                Command = new FileOpenCommand()
+                            });
+                            write_message(path_patch.Groups[4].Value, color);
+                        }
+                        else
+                        {
+                            write_message(l, color);
                         }
                         MainLog.Inlines.Add(new LineBreak());
                     }
                     MainLogScroll.ScrollToEnd();
                     Activate();
+                    Topmost = true;
+                    Topmost = false;
                 }));
             }
         }
