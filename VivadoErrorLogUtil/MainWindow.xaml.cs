@@ -31,7 +31,7 @@ namespace VivadoErrorLogUtil
         {
             InitializeComponent();
             LogI("START");
-            LogI("(c)mmitti 2018");
+            LogI("(c)mmitti 2018-2023");
             LogI("vivado error log tool");
             LogI("///////////////////////");
             WindowFinder = new Win32.WindowFinder();
@@ -45,6 +45,9 @@ namespace VivadoErrorLogUtil
 
         class FileOpenCommand : ICommand
         {
+            [System.Runtime.InteropServices.DllImport("shell32.dll")]
+            private static extern int FindExecutable(string lpFile, string lpDirectory, System.Text.StringBuilder lpResult);
+
             public event EventHandler CanExecuteChanged;
 
             public bool CanExecute(object parameter)
@@ -55,11 +58,23 @@ namespace VivadoErrorLogUtil
             public void Execute(object parameter)
             {
                 var proc = new System.Diagnostics.Process();
-
                 var path_patch = Regex.Match(parameter as String, @"([a-z]\:(/.*)+.*)\:(\d+)");
-                proc.StartInfo.FileName = path_patch.Groups[1].Value;
-                proc.StartInfo.UseShellExecute = true;
+                var file_name = path_patch.Groups[1].Value;
+                var line_number = path_patch.Groups[3].Value;
+
+                System.Text.StringBuilder exe_path = new System.Text.StringBuilder(255);
+                if (FindExecutable(file_name, null, exe_path) > 32 && Regex.IsMatch(exe_path.ToString(), @".*Microsoft VS Code\\Code.exe"))
+                {
+                    proc.StartInfo.FileName = exe_path.ToString();
+                    proc.StartInfo.Arguments = $"--goto {file_name}:{line_number}";
+                }
+                else
+                {
+                    proc.StartInfo.FileName = file_name;
+                    proc.StartInfo.UseShellExecute = true;
+                }
                 proc.Start();
+
             }
         }
 
@@ -77,133 +92,146 @@ namespace VivadoErrorLogUtil
 
         private async Task MainTask()
         {
-            var sim_dir = Path.Combine(ProjectRootDir, ProjectName + ".sim");
-            var dirs = Directory.GetDirectories(sim_dir);
-            foreach(var dir in dirs)
+            if (ProjectRootDir == null || ProjectName == null) return;
+            try
             {
-                foreach(var log_name in new string[]{"elaborate", "xvlog" })
+                var sim_dir = Path.Combine(ProjectRootDir, ProjectName + ".sim");
+                var dirs = Directory.GetDirectories(sim_dir);
+                foreach (var dir in dirs)
                 {
-                    var file_path = Path.Combine(dir, "behav", "xsim", log_name + ".log");
-                    if (File.Exists(file_path) && !LogFiles.ContainsKey(file_path)){
-                        LogFiles[file_path] = DateTime.MinValue;
-                        LogI(file_path + " found");
+                    foreach (var log_name in new string[] { "elaborate", "xvlog" })
+                    {
+                        var file_path = Path.Combine(dir, "behav", "xsim", log_name + ".log");
+                        if (File.Exists(file_path) && !LogFiles.ContainsKey(file_path))
+                        {
+                            LogFiles[file_path] = DateTime.MinValue;
+                            LogI(file_path + " found");
+                        }
                     }
                 }
-            }
 
-            string[] logs = null;
-            
+                string[] logs = null;
 
-            foreach (var key in LogFiles.Keys.ToList())
-            {
-                var ts = File.GetLastWriteTime(key);
-                if (LogFiles[key] < ts)
+
+                foreach (var key in LogFiles.Keys.ToList())
                 {
-                    LogFiles[key] = ts;
-
-                    if (CurrentLogFile == key)
+                    var ts = File.GetLastWriteTime(key);
+                    if (LogFiles[key] < ts)
                     {
-                        await Dispatcher.BeginInvoke(new Action(() =>
-                        {
-                            MainLog.Inlines.Clear();
-                            FileName.Inlines.Clear();
-                            FileName.Inlines.Add("No Error Log");
-                        }));
-                        CurrentLogFile = null;
-                        LogI("clear");
-                    }
+                        LogFiles[key] = ts;
 
-                    string[] tmp;
-                    try
-                    {
-                        using (var f = File.OpenRead(key))
+                        if (CurrentLogFile == key)
                         {
-                            using (var s = new StreamReader(f))
+                            await Dispatcher.BeginInvoke(new Action(() =>
                             {
-                                var lines = await s.ReadToEndAsync();
-                                tmp = lines.Split(new char[] { '\n', '\r' });
+                                MainLog.Inlines.Clear();
+                                FileName.Inlines.Clear();
+                                FileName.Inlines.Add("No Error Log");
+                            }));
+                            CurrentLogFile = null;
+                            LogI("clear");
+                        }
+
+                        string[] tmp;
+                        try
+                        {
+                            using (var f = File.OpenRead(key))
+                            {
+                                using (var s = new StreamReader(f))
+                                {
+                                    var lines = await s.ReadToEndAsync();
+                                    tmp = lines.Split(new char[] { '\n', '\r' });
+                                }
                             }
                         }
-                    }catch(Exception e)
-                    {
-                        continue;
-                    }
-                       
-                    foreach(var l in tmp)
-                    {
-                        if (l.Contains("ERROR"))
+                        catch (Exception e)
                         {
-                            CurrentLogFile = key;
-                            logs = tmp;
-                            LogI("load:" + key);
-                            break;
+                            continue;
+                        }
+
+                        foreach (var l in tmp)
+                        {
+                            if (l.Contains("ERROR"))
+                            {
+                                CurrentLogFile = key;
+                                logs = tmp;
+                                LogI("load:" + key);
+                                break;
+                            }
                         }
                     }
                 }
-            }
-            if (logs != null)
-            {
-                await Dispatcher.BeginInvoke(new Action(() =>
+                if (logs != null)
                 {
-                    FileName.Inlines.Clear();
-                    
-                    var m = Regex.Match(CurrentLogFile.Replace('\\', '/').ToString(), @"^(?<root>.*\.sim/)(?<sim_dir>[^/]*)(?<xsim>/behav/xsim/)(?<logname>[^\.]*).log$");
-                    if (m.Success)
+                    await Dispatcher.BeginInvoke(new Action(() =>
                     {
-                        FileName.Inlines.Add(new Run(m.Groups["sim_dir"].Value) { Foreground = Brushes.Blue });
-                        FileName.Inlines.Add("/");
-                        FileName.Inlines.Add(new Run(m.Groups["logname"].Value) { Foreground = Brushes.Blue });
-                        FileName.Inlines.Add(new Run("@" + LogFiles[CurrentLogFile].ToString()) { FontSize=14});
-                    }
+                        FileName.Inlines.Clear();
 
-                    MainLog.Inlines.Clear();
-
-                    void write_message(String text, Brush color)
-                    {
-                        if (color == Brushes.Black)
+                        var m = Regex.Match(CurrentLogFile.Replace('\\', '/').ToString(), @"^(?<root>.*\.sim/)(?<sim_dir>[^/]*)(?<xsim>/behav/xsim/)(?<logname>[^\.]*).log$");
+                        if (m.Success)
                         {
-                            MainLog.Inlines.Add(new Run(text));
-                        }
-                        else
-                        {
-
-                            MainLog.Inlines.Add(new Run(text) { Foreground = color });
-                        }
-                    }
-
-                    foreach(var l in logs)
-                    {
-                        var color = Brushes.Black;
-                        if (l.Contains("ERROR"))
-                        {
-                            color = Brushes.Red;
-                        }
-                        else if (l.Contains("WARNING"))
-                        {
-                            color = Brushes.Orange;
+                            FileName.Inlines.Add(new Run(m.Groups["sim_dir"].Value) { Foreground = Brushes.Blue });
+                            FileName.Inlines.Add("/");
+                            FileName.Inlines.Add(new Run(m.Groups["logname"].Value) { Foreground = Brushes.Blue });
+                            FileName.Inlines.Add(new Run("@" + LogFiles[CurrentLogFile].ToString()) { FontSize = 14 });
                         }
 
-                        var path_patch = Regex.Match(l, @"(.*)([a-z]\:(/.*)+.*\:\d+)(.*)");
-                        if (path_patch.Success && path_patch.Groups.Count >= 3)
+                        MainLog.Inlines.Clear();
+
+                        void write_message(String text, Brush color)
                         {
-                            write_message(path_patch.Groups[1].Value, color);
-                            MainLog.Inlines.Add(new Hyperlink(new Run(path_patch.Groups[2].Value))
+                            if (color == Brushes.Black)
                             {
-                                CommandParameter = path_patch.Groups[2].Value,
-                                Command = new FileOpenCommand()
-                            });
-                            write_message(path_patch.Groups[4].Value, color);
+                                MainLog.Inlines.Add(new Run(text));
+                            }
+                            else
+                            {
+
+                                MainLog.Inlines.Add(new Run(text) { Foreground = color });
+                            }
                         }
-                        else
+
+                        foreach (var l in logs)
                         {
-                            write_message(l, color);
+                            var color = Brushes.Black;
+                            if (l.Contains("ERROR"))
+                            {
+                                color = Brushes.Red;
+                            }
+                            else if (l.Contains("WARNING"))
+                            {
+                                color = Brushes.Orange;
+                            }
+
+                            var path_patch = Regex.Match(l, @"(.*)([a-z]\:(/.*)+.*\:\d+)(.*)");
+                            if (path_patch.Success && path_patch.Groups.Count >= 3)
+                            {
+                                write_message(path_patch.Groups[1].Value, color);
+                                MainLog.Inlines.Add(new Hyperlink(new Run(path_patch.Groups[2].Value))
+                                {
+                                    CommandParameter = path_patch.Groups[2].Value,
+                                    Command = new FileOpenCommand()
+                                });
+                                write_message(path_patch.Groups[4].Value, color);
+                            }
+                            else
+                            {
+                                write_message(l, color);
+                            }
+                            MainLog.Inlines.Add(new LineBreak());
                         }
-                        MainLog.Inlines.Add(new LineBreak());
-                    }
-                    MainLogScroll.ScrollToEnd();
-                    Activate();
-                    Topmost = true;
-                    Topmost = false;
+                        MainLogScroll.ScrollToEnd();
+                        Activate();
+                        Topmost = true;
+                        Topmost = false;
+                    }));
+                }
+            }catch(Exception ex) {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    SystemLog.Inlines.Add(new Run(ex.ToString()) { Foreground = Brushes.Blue });
+                    SystemLog.Inlines.Add(new LineBreak());
+                    SystemLogScroll.ScrollToEnd();
                 }));
             }
         }
